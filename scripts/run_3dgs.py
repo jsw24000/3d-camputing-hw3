@@ -21,6 +21,9 @@ def source_and_model(config: dict, source_mode: str) -> tuple[Path | None, Path 
     if source_mode == "full":
         source = resolve_path(cfg_get(config, "methods.gaussian_splatting.full_source", "data/3dgs"))
         model_dir = resolve_path(cfg_get(config, "methods.gaussian_splatting.full_model_dir", "results/3dgs/full_model"))
+    elif source_mode == "vggt":
+        source = resolve_path(cfg_get(config, "methods.gaussian_splatting.vggt_source", "data/3dgs_vggt"))
+        model_dir = resolve_path(cfg_get(config, "methods.gaussian_splatting.vggt_model_dir", "results/vggt_gs/model"))
     else:
         source = resolve_path(cfg_get(config, "methods.gaussian_splatting.source"))
         model_dir = resolve_path(cfg_get(config, "methods.gaussian_splatting.model_dir"))
@@ -86,7 +89,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--mode", choices=["train", "render", "all"], default="all")
-    parser.add_argument("--source-mode", choices=["full", "train"], default="full")
+    parser.add_argument("--source-mode", choices=["full", "train", "vggt"], default="full")
     parser.add_argument("--profile", choices=["smoke", "quick", "full"], default="full")
     parser.add_argument("--env", default=None, help="Conda env for official 3DGS, or 'current'.")
     parser.add_argument("--dry-run", action="store_true")
