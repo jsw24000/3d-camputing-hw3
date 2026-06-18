@@ -92,14 +92,14 @@ methods:
     raw_full_source: data/3dgs
     source: data/3dgs_train_undistorted
     full_source: data/3dgs_full_undistorted
-    vggt_source: data/3dgs_vggt
+    vggt_source: data/3dgs_vggt_51
     eval_source: data/3dgs_full_undistorted
     images: images
     prepared_data: data/3dgs_train
     prepared_eval_data: data/3dgs
     model_dir: results/3dgs/model
     full_model_dir: results/3dgs/full_model
-    vggt_model_dir: results/vggt_gs/model
+    vggt_model_dir: results/vggt_gs/model_51
     smoke_iterations: 100
     quick_iterations: 7000
     iterations: 30000

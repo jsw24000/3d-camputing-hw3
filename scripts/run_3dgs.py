@@ -43,6 +43,7 @@ def build_commands(
     profile: str,
     conda_env: str | None,
     eval_split: bool,
+    llffhold: int | None,
 ) -> list[list[str]]:
     repo = resolve_path(cfg_get(config, "methods.gaussian_splatting.repo"))
     train_script = cfg_get(config, "methods.gaussian_splatting.train_script", "train.py")
@@ -76,6 +77,8 @@ def build_commands(
         )
         if eval_split:
             command.append("--eval")
+        if llffhold is not None:
+            command.extend(["--llffhold", str(llffhold)])
         commands.append(command)
     if mode in {"render", "all"}:
         command = (
@@ -94,6 +97,8 @@ def build_commands(
         )
         if eval_split:
             command.append("--eval")
+        if llffhold is not None:
+            command.extend(["--llffhold", str(llffhold)])
         commands.append(command)
     return commands
 
@@ -106,6 +111,7 @@ def main() -> int:
     parser.add_argument("--profile", choices=["smoke", "quick", "full"], default="full")
     parser.add_argument("--env", default=None, help="Conda env for official 3DGS, or 'current'.")
     parser.add_argument("--eval", action="store_true", help="Use the official 3DGS train/test split.")
+    parser.add_argument("--llffhold", type=int, default=None, help="3DGS holdout interval; use 0 to read sparse/0/test.txt.")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -117,7 +123,7 @@ def main() -> int:
         )
     conda_env = args.env if args.env is not None else cfg_get(config, "fallback_envs.gaussian_splatting", "scene-3dgs")
     for idx, cmd in enumerate(
-        build_commands(config, args.mode, args.source_mode, args.profile, conda_env, args.eval),
+        build_commands(config, args.mode, args.source_mode, args.profile, conda_env, args.eval, args.llffhold),
         start=1,
     ):
         run_command(
