@@ -10,6 +10,29 @@ from pathlib import Path
 from project_utils import DEFAULT_CONFIG, cfg_get, ensure_dir, list_images, load_config, resolve_path, run_command
 
 
+def collect_vggt_images(config: dict, source: Path, extensions: list[str]) -> list[Path]:
+    images = list_images(source, extensions)
+    if images:
+        return images
+
+    fallback_dirs = [
+        resolve_path(cfg_get(config, "paths.images_train")),
+        resolve_path(cfg_get(config, "paths.images_test")),
+    ]
+    merged: dict[str, Path] = {}
+    for directory in fallback_dirs:
+        if directory is None:
+            continue
+        for image in list_images(directory, extensions):
+            merged[image.name] = image
+    if merged:
+        print(
+            "Configured VGGT source is empty; falling back to "
+            "paths.images_train + paths.images_test."
+        )
+    return [merged[name] for name in sorted(merged)]
+
+
 def sync_scene_images(config: dict, dry_run: bool) -> None:
     source = resolve_path(cfg_get(config, "methods.vggt_gs.images"))
     scene = resolve_path(cfg_get(config, "methods.vggt_gs.scene_dir"))
@@ -17,7 +40,7 @@ def sync_scene_images(config: dict, dry_run: bool) -> None:
     if source is None or scene is None:
         raise ValueError("VGGT image source or scene path is not configured.")
     target = scene / "images"
-    images = list_images(source, extensions)
+    images = collect_vggt_images(config, source, extensions)
     print(f"VGGT scene image sync: {source} -> {target} ({len(images)} images)")
     if dry_run:
         return
