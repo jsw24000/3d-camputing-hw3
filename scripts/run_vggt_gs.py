@@ -10,6 +10,12 @@ from pathlib import Path
 from project_utils import DEFAULT_CONFIG, cfg_get, ensure_dir, list_images, load_config, resolve_path, run_command
 
 
+def python_launcher(conda_env: str | None) -> list[str]:
+    if conda_env is None or conda_env.lower() == "current":
+        return [sys.executable]
+    return ["conda", "run", "--no-capture-output", "-n", conda_env, "python"]
+
+
 def collect_vggt_images(config: dict, source: Path, extensions: list[str]) -> list[Path]:
     images = list_images(source, extensions)
     if images:
@@ -53,7 +59,7 @@ def sync_scene_images(config: dict, dry_run: bool) -> None:
         shutil.copy2(image, target / image.name)
 
 
-def build_commands(config: dict, mode: str, dry_run: bool) -> list[list[str]]:
+def build_commands(config: dict, mode: str, dry_run: bool, conda_env: str | None) -> list[list[str]]:
     repo = resolve_path(cfg_get(config, "methods.vggt_gs.repo"))
     scene = resolve_path(cfg_get(config, "methods.vggt_gs.scene_dir"))
     result = resolve_path(cfg_get(config, "methods.vggt_gs.result_dir"))
@@ -70,7 +76,7 @@ def build_commands(config: dict, mode: str, dry_run: bool) -> list[list[str]]:
     commands: list[list[str]] = []
     if mode in {"vggt", "all"}:
         cmd = [
-            sys.executable,
+            *python_launcher(conda_env),
             str(repo / demo),
             f"--scene_dir={scene}",
             f"--max_query_pts={max_query_pts}",
@@ -85,7 +91,7 @@ def build_commands(config: dict, mode: str, dry_run: bool) -> list[list[str]]:
         trainer = gsplat_trainer or "examples/simple_trainer.py"
         commands.append(
             [
-                sys.executable,
+                *python_launcher(conda_env),
                 trainer,
                 "default",
                 "--data_factor",
@@ -107,13 +113,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--mode", choices=["vggt", "gsplat", "all"], default="all")
+    parser.add_argument("--env", default=None, help="Conda env for VGGT/gsplat, or 'current'.")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     config = load_config(args.config)
+    conda_env = args.env if args.env is not None else cfg_get(config, "fallback_envs.vggt", "scene-vggt")
     if args.mode in {"vggt", "all"}:
         sync_scene_images(config, args.dry_run)
-    for idx, cmd in enumerate(build_commands(config, args.mode, args.dry_run), start=1):
+    for idx, cmd in enumerate(build_commands(config, args.mode, args.dry_run, conda_env), start=1):
         run_command(
             cmd,
             dry_run=args.dry_run,
