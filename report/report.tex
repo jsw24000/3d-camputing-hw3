@@ -46,6 +46,15 @@
 
 预处理时我只做了按 2 FPS 抽帧，共得到 51 张图像；没有做裁剪、去模糊或 mask。配置中的目标宽度为 720，和原视频宽度一致，因此没有进一步空间降采样。训练/测试划分使用固定随机种子 42 和 0.1 的测试比例，最终为 46 张训练图像和 5 张测试图像；测试图像为 \texttt{frame\_000005.jpg}、\texttt{frame\_000012.jpg}、\texttt{frame\_000020.jpg}、\texttt{frame\_000024.jpg}、\texttt{frame\_000026.jpg}。
 
+图 \ref{fig:capture-trajectory} 是用训练集 COLMAP 结果可视化出的相机轨迹和稀疏点云。红色相机轨迹基本形成绕讲台的闭合弧线，和我实际手持手机绕讲台一圈的拍摄路径一致；灰色点云主要集中在黑板边缘、桌椅边缘、门框和线缆等纹理明显的位置。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.78\linewidth]{colmap_geometry.png}
+  \caption{采集路径对应的相机轨迹。}
+  \label{fig:capture-trajectory}
+\end{figure}
+
 \section{方法概述}
 
 \begin{table}[H]
@@ -144,14 +153,7 @@
   \label{fig:aligned-render-compare}
 \end{figure}
 
-COLMAP 在训练集上注册了全部 46 张图像，恢复 2113 个稀疏三维点，平均重投影误差为 0.945 px，平均 track length 为 3.995。图 \ref{fig:colmap-geometry} 中相机轨迹比较连续，说明绕讲台一圈的采集路径可以支持基本 SfM；点云主要集中在黑板边缘、桌椅边缘、门框和线缆等纹理明显的位置。
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.88\linewidth]{colmap_geometry.png}
-  \caption{COLMAP 训练集稀疏点云与相机轨迹。}
-  \label{fig:colmap-geometry}
-\end{figure}
+COLMAP 在训练集上注册了全部 46 张图像，恢复 2113 个稀疏三维点，平均重投影误差为 0.945 px，平均 track length 为 3.995。图 \ref{fig:capture-trajectory} 中相机轨迹比较连续，说明绕讲台一圈的采集路径可以支持基本 SfM。
 
 图 \ref{fig:gs-scene-viewer} 进一步展示了 3DGS 学到的显式 Gaussian 分布。主体区域能形成可辨认的讲台外形，说明图像损失确实把可见表面拉到了正确位置；但外围的亮点和拉丝也说明部分 Gaussian 更像是在补偿视角误差，而不是真实几何表面。
 
