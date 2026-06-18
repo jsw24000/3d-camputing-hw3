@@ -36,7 +36,14 @@ def python_launcher(conda_env: str | None) -> list[str]:
     return ["conda", "run", "--no-capture-output", "-n", conda_env, "python"]
 
 
-def build_commands(config: dict, mode: str, source_mode: str, profile: str, conda_env: str | None) -> list[list[str]]:
+def build_commands(
+    config: dict,
+    mode: str,
+    source_mode: str,
+    profile: str,
+    conda_env: str | None,
+    eval_split: bool,
+) -> list[list[str]]:
     repo = resolve_path(cfg_get(config, "methods.gaussian_splatting.repo"))
     train_script = cfg_get(config, "methods.gaussian_splatting.train_script", "train.py")
     render_script = cfg_get(config, "methods.gaussian_splatting.render_script", "render.py")
@@ -50,7 +57,7 @@ def build_commands(config: dict, mode: str, source_mode: str, profile: str, cond
 
     commands: list[list[str]] = []
     if mode in {"train", "all"}:
-        commands.append(
+        command = (
             python_launcher(conda_env)
             + [
                 str(repo / train_script),
@@ -67,8 +74,11 @@ def build_commands(config: dict, mode: str, source_mode: str, profile: str, cond
                 "--disable_viewer",
             ]
         )
+        if eval_split:
+            command.append("--eval")
+        commands.append(command)
     if mode in {"render", "all"}:
-        commands.append(
+        command = (
             python_launcher(conda_env)
             + [
                 str(repo / render_script),
@@ -82,6 +92,9 @@ def build_commands(config: dict, mode: str, source_mode: str, profile: str, cond
                 iterations,
             ]
         )
+        if eval_split:
+            command.append("--eval")
+        commands.append(command)
     return commands
 
 
@@ -92,6 +105,7 @@ def main() -> int:
     parser.add_argument("--source-mode", choices=["full", "train", "vggt"], default="full")
     parser.add_argument("--profile", choices=["smoke", "quick", "full"], default="full")
     parser.add_argument("--env", default=None, help="Conda env for official 3DGS, or 'current'.")
+    parser.add_argument("--eval", action="store_true", help="Use the official 3DGS train/test split.")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -102,7 +116,10 @@ def main() -> int:
             f"3DGS repo not found: {repo}. Clone graphdeco-inria/gaussian-splatting into external/ first."
         )
     conda_env = args.env if args.env is not None else cfg_get(config, "fallback_envs.gaussian_splatting", "scene-3dgs")
-    for idx, cmd in enumerate(build_commands(config, args.mode, args.source_mode, args.profile, conda_env), start=1):
+    for idx, cmd in enumerate(
+        build_commands(config, args.mode, args.source_mode, args.profile, conda_env, args.eval),
+        start=1,
+    ):
         run_command(
             cmd,
             dry_run=args.dry_run,
