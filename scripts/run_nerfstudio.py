@@ -72,6 +72,7 @@ def build_commands(config: dict, mode: str, profile: str, dry_run: bool, conda_e
     ns_data = resolve_path(cfg_get(config, "paths.nerfstudio_data"))
     ns_colmap = resolve_path(cfg_get(config, "paths.nerfstudio_colmap"))
     ns_train_transforms = resolve_path(cfg_get(config, "methods.nerfstudio.colmap_transforms"))
+    ns_all_transforms = resolve_path(cfg_get(config, "methods.nerfstudio.colmap_transforms_all"))
     out = resolve_path(cfg_get(config, "paths.result_nerfstudio"))
     method = cfg_get(config, "methods.nerfstudio.method", "nerfacto")
     implementation = cfg_get(config, "methods.nerfstudio.implementation")
@@ -111,11 +112,11 @@ def build_commands(config: dict, mode: str, profile: str, dry_run: bool, conda_e
             dry_run,
             conda_env,
         )
-        train_data = (
-            ns_train_transforms.parent
-            if ns_train_transforms is not None and (ns_train_transforms.exists() or dry_run)
-            else ns_data
-        )
+        train_data = ns_data
+        if ns_all_transforms is not None and (ns_all_transforms.exists() or dry_run):
+            train_data = ns_all_transforms.parent
+        elif ns_train_transforms is not None and (ns_train_transforms.exists() or dry_run):
+            train_data = ns_train_transforms.parent
         commands.append(
             cmd := [
                 *ns_train,
