@@ -1,0 +1,132 @@
+project:
+  name: assignment_3d_scene_reconstruction
+  root: .
+
+env:
+  type: conda
+  name: torch_env
+  python: G:/anaconda/envs/torch_env/python.exe
+  colmap: E:/3D-tools/COLMAP/bin/colmap.exe
+  ffmpeg: null
+
+fallback_envs:
+  nerfstudio: scene-nerf
+  gaussian_splatting: scene-3dgs
+  vggt: scene-vggt
+
+paths:
+  data: data
+  raw: data/raw
+  images: data/images
+  images_train: data/images_train
+  images_test: data/images_test
+  splits: data/splits
+  colmap: data/colmap
+  colmap_train: data/colmap_train
+  nerfstudio_data: data/nerfstudio
+  nerfstudio_colmap: data/nerfstudio_colmap
+  nerfstudio_colmap_train: data/nerfstudio_colmap_train
+  nerfstudio_colmap_test: data/nerfstudio_colmap_test
+  3dgs_data: data/3dgs
+  3dgs_train_data: data/3dgs_train
+  vggt_scene: data/vggt_scene
+  external: external
+  results: results
+  result_colmap: results/colmap
+  result_nerfstudio: results/nerfstudio
+  result_3dgs: results/3dgs
+  result_vggt_gs: results/vggt_gs
+  logs: logs
+
+data:
+  video: data/raw/desk.mp4
+  image_extensions: [".jpg", ".jpeg", ".png"]
+  frame_pattern: frame_%06d.jpg
+  extract_fps: 2
+  target_width: 720
+  target_height: -1
+  jpeg_quality: 2
+  test_ratio: 0.1
+  random_seed: 42
+
+dependency_policy:
+  primary_env: torch_env
+  use_project_venv: false
+  optional_lpips: true
+  install_training_tools_in_primary_env_first: true
+  split_training_envs_only_after_install_failure: true
+
+methods:
+  colmap:
+    database: data/colmap/database.db
+    sparse: data/colmap/sparse
+    sparse_txt: data/colmap/sparse_txt
+    point_cloud_ply: results/colmap/sparse_point_cloud.ply
+    single_camera: true
+    camera_model: SIMPLE_RADIAL
+    camera_params: null
+    matcher: exhaustive
+    use_ascii_workspace: true
+    ascii_workspace: assignment_3d_scene_colmap
+  nerfstudio:
+    command_process: ns-process-data
+    command_train: ns-train
+    command_eval: ns-eval
+    method: nerfacto
+    implementation: torch
+    vis: tensorboard
+    colmap_transforms: data/nerfstudio_colmap_train/transforms.json
+    colmap_transforms_all: data/nerfstudio_colmap/transforms.json
+    colmap_transforms_test: data/nerfstudio_colmap_test/transforms.json
+    trained_config: null
+    eval_json: results/nerfstudio/eval.json
+    render_output: results/nerfstudio/eval_renders
+    smoke_iterations: 500
+    quick_iterations: 7000
+    max_num_iterations: 30000
+  gaussian_splatting:
+    repo: external/gaussian-splatting
+    train_script: train.py
+    render_script: render.py
+    raw_source: data/3dgs_train
+    raw_full_source: data/3dgs
+    source: data/3dgs_train_undistorted
+    full_source: data/3dgs_full_undistorted
+    eval_source: data/3dgs_full_undistorted
+    images: images
+    prepared_data: data/3dgs_train
+    prepared_eval_data: data/3dgs
+    model_dir: results/3dgs/model
+    full_model_dir: results/3dgs/full_model
+    smoke_iterations: 100
+    quick_iterations: 7000
+    iterations: 30000
+    resolution: 2
+  vggt_gs:
+    repo: external/vggt
+    demo_colmap_script: demo_colmap.py
+    scene_dir: data/vggt_scene_train
+    images: data/images_train
+    result_dir: results/vggt_gs
+    use_ba: false
+    max_query_pts: 2048
+    query_frame_num: 5
+
+evaluation:
+  metrics_csv: results/metrics.csv
+  methods:
+    nerfstudio:
+      pred_dir: results/nerfstudio/eval_renders
+      gt_dir: data/images_test
+    3dgs_eval_test:
+      pred_dir: results/3dgs/eval_model/test/ours_30000/renders
+      gt_dir: results/3dgs/eval_model/test/ours_30000/gt
+    3dgs_eval_train:
+      pred_dir: results/3dgs/eval_model/train/ours_30000/renders
+      gt_dir: results/3dgs/eval_model/train/ours_30000/gt
+    3dgs_full_train:
+      pred_dir: results/3dgs/full_model/train/ours_30000/renders
+      gt_dir: results/3dgs/full_model/train/ours_30000/gt
+    vggt_gs:
+      pred_dir: results/vggt_gs/renders
+      gt_dir: data/images_test
