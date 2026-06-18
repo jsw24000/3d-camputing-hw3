@@ -23,6 +23,8 @@ def sync_scene_images(config: dict, dry_run: bool) -> None:
         return
     if not images:
         raise FileNotFoundError(f"No source images found for VGGT: {source}")
+    if target.exists():
+        shutil.rmtree(target)
     ensure_dir(target)
     for image in images:
         shutil.copy2(image, target / image.name)
@@ -38,8 +40,9 @@ def build_commands(config: dict, mode: str, dry_run: bool) -> list[list[str]]:
     query_frame_num = str(cfg_get(config, "methods.vggt_gs.query_frame_num", 5))
     if not all([repo, scene, result]):
         raise ValueError("VGGT-GS paths are incomplete.")
-    ensure_dir(scene)
-    ensure_dir(result)
+    if not dry_run:
+        ensure_dir(scene)
+        ensure_dir(result)
 
     commands: list[list[str]] = []
     if mode in {"vggt", "all"}:

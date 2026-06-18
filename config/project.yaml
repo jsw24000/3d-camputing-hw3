@@ -107,8 +107,8 @@ methods:
   vggt_gs:
     repo: external/vggt
     demo_colmap_script: demo_colmap.py
-    scene_dir: data/vggt_scene_train
-    images: data/images_train
+    scene_dir: data/vggt_scene
+    images: data/images
     result_dir: results/vggt_gs
     use_ba: false
     max_query_pts: 2048

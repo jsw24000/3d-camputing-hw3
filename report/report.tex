@@ -1,6 +1,6 @@
 \documentclass[UTF8,a4paper,11pt]{ctexart}
 
-\usepackage[margin=2.3cm]{geometry}
+\usepackage[margin=2.25cm]{geometry}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{array}
@@ -20,14 +20,15 @@
 }
 
 \setlength{\parindent}{2em}
-\setlength{\parskip}{0.25em}
-\setlist[itemize]{itemsep=0.15em, topsep=0.2em}
+\setlength{\parskip}{0.2em}
+\setlist[itemize]{itemsep=0.12em, topsep=0.2em}
 \captionsetup{font=small, labelfont=bf}
+\renewcommand{\arraystretch}{1.12}
 
 \title{\textbf{三维计算成像基础 作业三}}
 \author{
   姓名：\underline{姜书伟\hspace{3cm}} \quad
-  学号：\underline{2400013170\hspace{3cm}} \quad
+  学号：\underline{2400013170\hspace{3cm}}
 }
 \date{\today}
 
@@ -36,153 +37,146 @@
 \maketitle
 
 \begin{abstract}
-本文围绕同一真实室内讲台场景，对 COLMAP 稀疏几何、Nerfacto/NeRF、官方 3D Gaussian Splatting（3DGS）以及补充的 VGGT-GS 流程进行重建与评估。实验数据来自自拍视频 \texttt{desk.mp4}，视频长度约 25.21 s，分辨率为 $720\times1280$，抽帧后得到 51 张图像，其中项目划分为 46 张训练图像和 5 张测试图像。主实验中，COLMAP 用于估计相机位姿和稀疏点云；Nerfacto 与 3DGS 用于新视角合成比较；补充实验中，VGGT 作为预训练前馈几何模型输出 COLMAP 格式的相机与点云，并进一步作为 3DGS 初始化进行探索。
-
-实验结果显示，COLMAP 在训练集上注册 46 张图像并恢复 2113 个稀疏三维点，平均重投影误差为 0.945 px，点云较稀疏但几何一致性较强。Nerfacto 在可获得测试输出上的平均 PSNR、SSIM、LPIPS 分别为 19.18、0.767、0.371；官方 3DGS 在其 eval split 的测试渲染上达到 24.59、0.817、0.177，外观更锐利且训练/渲染效率更高。VGGT 在 RTX 4090 48GB 上对 46 张训练图完成重建和 sparse 导出用时 28.29 s，输出 100000 个点，峰值显存约 42428 MiB。由于 VGGT-GS 当前只生成训练视角渲染，本文将其作为补充探索而非严格 hold-out 定量比较。
+我录制的是一段华为手机绕教室讲台一圈拍摄的室内场景视频，并从中抽取 51 张图像。我使用 COLMAP 得到相机位姿和稀疏点云，用 Nerfstudio 的 Nerfacto/NeRF 与 GraphDeCo 官方 3DGS 做新视角渲染，再用 Facebook VGGT 导出的几何初始化补充 VGGT-GS。结果包括点云、NeRF 深度与渲染对比、3DGS Gaussian 可视化和三方法并列图。VGGT 重建部分在 AutoDL 的 RTX 4090 48GB 卡上运行。提交内容包含 \texttt{report.pdf}、代码、配置、结果和日志。
 \end{abstract}
 
 \section{数据采集与预处理}
 
-实验场景为真实室内讲台区域，包含桌面、椅子、黑板、墙面、门框、电源线、显示器支架等结构。该场景整体静态，适合从移动相机视频中抽取多视角图像并进行重建。原始数据为自拍视频 \texttt{data/raw/desk.mp4}，长度约 25.21 s，OpenCV 读取分辨率为 $720\times1280$，帧率约 29 FPS。
+我拍摄的是教室前方的讲台区域，场景里有桌面、椅子、黑板、墙面、门框、线缆和显示器支架等物体。拍摄设备为华为手机，拍摄路径是手持手机绕讲台一圈，尽量覆盖正面、侧面和局部遮挡区域。原始视频为 \texttt{data/raw/desk.mp4}，时长约 25.21 s，OpenCV 读取分辨率为 $720\times1280$，帧率约 29 FPS。
 
-预处理脚本从视频中抽取 51 张图像，并按照固定随机种子划分训练集和测试集。训练集包含 46 张图像，测试集包含 5 张图像，测试图像文件名为 \texttt{frame\_000005.jpg}、\texttt{frame\_000012.jpg}、\texttt{frame\_000020.jpg}、\texttt{frame\_000024.jpg} 和 \texttt{frame\_000026.jpg}。需要说明的是，不同工具对测试视角的导出规则并不完全一致：Nerfstudio 使用项目划分的测试视角；官方 3DGS 的 eval 结果来自其内部 \texttt{--eval} 划分；VGGT-GS 当前只使用 46 张训练图像重建，因此没有与前两者完全一致的 hold-out 测试视角。
+预处理时我只做了按 2 FPS 抽帧，共得到 51 张图像；没有做裁剪、去模糊或 mask。配置中的目标宽度为 720，和原视频宽度一致，因此没有进一步空间降采样。训练/测试划分使用固定随机种子 42 和 0.1 的测试比例，最终为 46 张训练图像和 5 张测试图像；测试图像为 \texttt{frame\_000005.jpg}、\texttt{frame\_000012.jpg}、\texttt{frame\_000020.jpg}、\texttt{frame\_000024.jpg}、\texttt{frame\_000026.jpg}。
 
 \section{方法概述}
 
-\subsection{COLMAP 稀疏几何}
+\begin{table}[H]
+  \centering
+  \caption{我使用的重建与渲染方法}
+  \label{tab:methods}
+  \footnotesize
+  \begin{tabular}{p{2.6cm}p{4.1cm}p{7.5cm}}
+    \toprule
+    方法 & 作用 & 最简说明与代码来源 \\
+    \midrule
+    COLMAP & 位姿和稀疏点云 & 用特征匹配、SfM 和 bundle adjustment 估计相机内外参与稀疏点云，作为传统几何基线和后续方法的位姿来源。\\
+    Nerfacto / NeRF & 隐式辐射场渲染 & 使用 Nerfstudio 的 Nerfacto 实现，输入为 COLMAP 位姿转换出的 transforms 和训练图像，输出测试视角渲染与深度图。\\
+    3DGS & 显式 Gaussian splatting & 使用 GraphDeCo 官方仓库 \url{https://github.com/graphdeco-inria/gaussian-splatting}，以 COLMAP sparse 结果初始化，训练 30000 迭代。\\
+    VGGT-GS & 预训练几何初始化补充 & 使用 Facebook VGGT 官方思路和导出流程 \url{https://github.com/facebookresearch/vggt} 预测相机和点云，再整理为 3DGS 输入继续训练。\\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
-COLMAP 通过特征提取、匹配、增量式 SfM 和 bundle adjustment，从多视角图像中估计相机位姿、相机内参和稀疏三维点。它的输出是显式的相机轨迹和稀疏点云，几何解释性较强，但依赖可匹配纹理。墙面、反光桌面和低纹理区域容易缺点或产生不稳定点。
-
-本文将 COLMAP 作为传统几何基线和位姿来源。全量 51 张图像的 COLMAP 模型注册 51 张图像并恢复 2590 个稀疏点；训练集模型注册 46 张图像并恢复 2113 个稀疏点。训练集平均重投影误差为 0.945 px，平均 track length 为 3.995，说明相机轨迹和多视图匹配整体可用。
-
-\subsection{NeRF}
-
-Nerfacto 属于连续隐式辐射场表示。它通过神经网络学习空间位置和观察方向到颜色、密度等渲染量的映射，并通过体渲染生成新视角图像。与稀疏点云相比，NeRF 不直接存储显式表面，而是通过密度场隐式表达几何和外观。它的优势是拓扑灵活、表达连续，但训练时间较长，且几何边界不如显式方法直观。
-
-本实验使用 Nerfstudio 中的 Nerfacto 实现，输入为由 COLMAP 位姿转换得到的训练视角 transforms 文件和训练图像。评估使用 Nerfstudio 原生 eval 输出，定量指标包括 PSNR、SSIM 和 LPIPS。
-
-\subsection{官方 3D Gaussian Splatting}
-
-3DGS 使用一组三维各向异性 Gaussian 表示场景。每个 Gaussian 包含位置、尺度、旋转、不透明度和颜色/球谐系数等参数。渲染时将 Gaussian 投影到图像平面并进行 alpha compositing，因此训练和渲染都较高效。
-
-本实验使用 GraphDeCo 官方 3DGS 代码，并以 COLMAP sparse 模型作为初始化。训练迭代数为 30000，渲染分辨率参数为 2。3DGS 的显式基元便于查看和局部编辑，但 Gaussian 分布不等价于真实网格或严格表面，因此几何解释需结合点云分布、相机轨迹和渲染伪影共同分析。
-
-\subsection{VGGT-GS}
-
-VGGT 是预训练前馈几何模型，能够从一组图像中直接预测相机和稠密点云，并导出 COLMAP sparse 格式。本文补充使用官方 VGGT 对 46 张训练图像进行重建，得到 \texttt{cameras.bin}、\texttt{images.bin}、\texttt{points3D.bin} 和 \texttt{points.ply}。随后将该 sparse 模型整理为 3DGS 可读取的数据结构，并训练 VGGT 初始化的 3DGS。
-
-该实验的目的不是替代主实验的 NeRF/3DGS hold-out 比较，而是观察预训练几何初始化与传统 SfM 初始化在点云密度、重建速度和 3DGS 训练视角拟合上的差异。当前 VGGT-GS 只渲染了训练视角，测试目录为空，因此不参与严格的新视角定量排名。
+这四个方法在报告中的定位不同：COLMAP 主要用于几何和位姿；Nerfacto 与 3DGS 是主要的新视角合成比较；VGGT-GS 是补充探索，因为它当前只生成了训练视角渲染，没有和主实验完全一致的 hold-out 测试结果。
 
 \section{实验设置}
 
-本地主要实验环境为 Windows 11，GPU 为 NVIDIA GeForce RTX 4060 Laptop GPU，显存约 8188 MiB。COLMAP、Nerfstudio 和官方 3DGS 的主要训练与评估日志保存于 \texttt{logs/} 和 \texttt{results/}。VGGT 补充实验在 AutoDL 远程机器上运行，GPU 为 NVIDIA GeForce RTX 4090，显存 49140 MiB。由于硬件不同，COLMAP 与 VGGT 的运行时间只能作为本实验条件下的效率参考，不能解释为算法绝对速度的严格公平排名。
+\begin{table}[H]
+  \centering
+  \caption{实验环境与主要设置}
+  \label{tab:settings}
+  \footnotesize
+  \begin{tabular}{p{3.1cm}p{11.1cm}}
+    \toprule
+    项目 & 设置 \\
+    \midrule
+    本地机器 & Windows 11，NVIDIA GeForce RTX 4060 Laptop GPU，显存约 8188 MiB。\\
+    远程机器 & AutoDL，NVIDIA GeForce RTX 4090，48GB 显存；VGGT 重建部分在这里运行。\\
+    数据规模 & 51 张图像；46 张训练图像，5 张项目测试图像。\\
+    训练设置 & Nerfacto、官方 3DGS 和 VGGT-GS 的主要训练均记录到 30000 步或 30000 迭代。\\
+    输出目录 & 结果在 \texttt{results/}，日志在 \texttt{logs/}，报告图片在 \texttt{report/assets/}。\\
+    指标 & 新视角合成使用 PSNR、SSIM、LPIPS；几何质量主要看重投影误差、点云分布、深度图和 Gaussian 可视化。\\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
-本文区分三类结果口径：
-\begin{itemize}
-  \item \textbf{实测定量指标}：来自 \texttt{results/metrics.csv}、\texttt{results/timing.csv} 和 VGGT 监控日志。
-  \item \textbf{图像观察}：来自渲染结果、深度图和点云可视化。
-  \item \textbf{方法解释}：基于各表示的结构特点进行分析，不把 COLMAP、NeRF、3DGS 或 VGGT 的任一输出当作绝对真值。
-\end{itemize}
+需要说明的是，Nerfstudio 使用项目划分的测试视角；官方 3DGS 的 eval 结果来自它自己的 \texttt{--eval} 划分；VGGT-GS 当前只有训练视角渲染。因此我只对 Nerfacto 和官方 3DGS 做定量新视角对比，VGGT-GS 只放入定性和初始化分析。
 
-\section{定量结果}
+\section{结果展示}
 
-\subsection{新视角合成质量}
-
-表 \ref{tab:view-synthesis} 汇总可获得的新视角合成指标。PSNR 和 SSIM 越高越好，LPIPS 越低越好。3DGS 在其 eval split 测试视角上取得更好的指标，说明在本场景中显式 Gaussian 表示对外观和局部纹理的拟合更强。
+\subsection{定量指标}
 
 \begin{table}[H]
   \centering
-  \caption{新视角合成质量对比}
+  \caption{新视角合成质量}
   \label{tab:view-synthesis}
   \begin{tabular}{lcccc}
     \toprule
     方法 & 评估输出 & PSNR $\uparrow$ & SSIM $\uparrow$ & LPIPS $\downarrow$ \\
     \midrule
-    Nerfacto / NeRF & ns-eval，4 个测试视角 & 19.18 & 0.767 & 0.371 \\
-    3DGS & 官方 eval，7 对测试图像 & 24.59 & 0.817 & 0.177 \\
+    Nerfacto / NeRF & 4 个测试视角 & 19.18 & 0.767 & 0.371 \\
+    3DGS & 7 对 eval 测试图像 & 24.59 & 0.817 & 0.177 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-此外，3DGS 在全量训练视角上的平均 PSNR 为 35.25，SSIM 为 0.957，LPIPS 为 0.064。该结果只能说明模型对已见视角拟合较强，不能作为新视角泛化能力的主要结论。
-
-\subsection{重建速度与资源消耗}
-
-表 \ref{tab:efficiency} 汇总了主要阶段的运行时间和资源信息。Nerfacto 训练耗时约 20675 s，明显长于 3DGS 的约 848--930 s。3DGS 渲染 30000 迭代模型耗时约 17.6 s，表现出较高渲染效率。VGGT 重建阶段在 RTX 4090 48GB 上用时 28.29 s，峰值显存约 42428 MiB，说明前馈重建速度较快，但显存需求较高。
+从这组指标看，官方 3DGS 在本场景的测试渲染上明显优于 Nerfacto，主要体现在边缘更清晰、纹理更锐利。3DGS 在全量训练视角上的平均 PSNR/SSIM/LPIPS 为 35.25/0.957/0.064，但这是已见视角拟合结果，我不把它作为泛化能力结论。
 
 \begin{table}[H]
   \centering
-  \caption{效率与资源记录}
+  \caption{训练、渲染与资源消耗}
   \label{tab:efficiency}
-  \begin{tabular}{p{3.4cm}p{2.4cm}p{2.7cm}p{5.3cm}}
+  \footnotesize
+  \begin{tabular}{p{3.2cm}p{2.1cm}p{3.0cm}p{5.7cm}}
     \toprule
-    方法或阶段 & 时间 / s & 硬件 & 备注 \\
+    阶段 & 时间 / s & 硬件 & 备注 \\
     \midrule
-    COLMAP 训练集 SfM & 6.68 & RTX 4060 Laptop & 46 张训练图像，2113 个稀疏点 \\
-    Nerfacto 训练 & 20675.12 & RTX 4060 Laptop & 30000 步训练 \\
-    Nerfacto eval & 489.11 & RTX 4060 Laptop & \texttt{ns-eval} 输出 \\
-    3DGS eval 训练 & 847.53 & RTX 4060 Laptop & 30000 迭代，官方 eval split \\
-    3DGS eval 渲染 & 17.64 & RTX 4060 Laptop & 官方 render 输出 \\
-    VGGT 重建导出 & 28.29 & RTX 4090 48GB & 46 张训练图，100000 点，峰值显存 42428 MiB \\
+    COLMAP 训练集 SfM & 6.68 & RTX 4060 Laptop & 注册 46 张训练图，恢复 2113 个稀疏点。\\
+    Nerfacto 训练 & 20675.12 & RTX 4060 Laptop & 30000 步，约 5.7 小时。\\
+    Nerfacto eval & 489.11 & RTX 4060 Laptop & Nerfstudio 原生评估输出。\\
+    3DGS eval 训练 & 847.53 & RTX 4060 Laptop & 30000 迭代，官方 eval split。\\
+    3DGS eval 渲染 & 17.64 & RTX 4060 Laptop & 对 30000 迭代模型渲染。\\
+    VGGT 重建导出 & 28.29 & RTX 4090 48GB & AutoDL 上运行，46 张图，100000 点，峰值显存约 42428 MiB。\\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\section{定性与几何质量分析}
+\subsection{几何和渲染可视化}
 
-\subsection{COLMAP 稀疏点云}
-
-图 \ref{fig:colmap-geometry} 展示了训练集 COLMAP 重建的点云和相机轨迹。红色相机轨迹整体连续，说明采集路径和位姿估计具有一致性。灰色点云主要集中在讲台边缘、椅子、黑板边框、门框和线缆等纹理或边缘明显的区域；墙面、桌面大平面和反光区域点较少。
+COLMAP 在训练集上注册了全部 46 张图像，恢复 2113 个稀疏三维点，平均重投影误差为 0.945 px，平均 track length 为 3.995。图 \ref{fig:colmap-geometry} 中相机轨迹比较连续，说明绕讲台一圈的采集路径可以支持基本 SfM；点云主要集中在黑板边缘、桌椅边缘、门框和线缆等纹理明显的位置。
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.93\linewidth]{colmap_geometry.png}
-  \caption{COLMAP 训练集稀疏点云与相机轨迹。点云稀疏但相机轨迹连续，说明位姿估计可用。}
+  \includegraphics[width=0.88\linewidth]{colmap_geometry.png}
+  \caption{COLMAP 训练集稀疏点云与相机轨迹。}
   \label{fig:colmap-geometry}
 \end{figure}
 
-\subsection{Nerfacto 渲染与深度观察}
-
-图 \ref{fig:nerf-qual} 为 Nerfstudio 导出的测试视角对比图。Nerfacto 能恢复讲台、墙面、门框和显示器支架等主要结构，但在细线缆、桌面边缘、椅子局部以及低纹理墙面区域存在模糊和噪声。图 \ref{fig:nerf-depth} 的深度图不是由真实深度传感器得到的真值，而是 Nerfacto 隐式密度场沿光线积分得到的几何代理。它的价值在于帮助观察模型是否学到了大致连续的前后关系、遮挡层次和物体轮廓，同时定位几何不稳定区域：若深度图在物体边界、反光桌面和低纹理墙面处出现噪声或断裂，通常说明该处的隐式几何约束较弱。因此本文将其作为几何趋势和失败模式分析依据，而不把它作为精确深度评价。
+Nerfacto 的测试视角可以恢复讲台、墙面、门框和显示器支架的大体结构，但细线、桌面边缘和低纹理墙面会变糊。图 \ref{fig:nerf-depth} 是 Nerfacto 从隐式密度场得到的深度代理，不是真实深度传感器数据；我用它观察前后关系和边界噪声。
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.82\linewidth]{nerf_eval_img_0000.png}
-  \caption{Nerfacto 测试视角定性结果。整体结构可见，但细节和边界存在模糊。}
-  \label{fig:nerf-qual}
-\end{figure}
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.42\linewidth]{nerf_depth_0000.png}
-  \caption{Nerfacto 深度图。深度可用于观察隐式几何趋势，但低纹理和遮挡边界处噪声较明显。}
+  \begin{minipage}{0.56\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{nerf_eval_img_0000.png}
+    \caption*{Nerfacto 测试视角渲染对比}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.34\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{nerf_depth_0000.png}
+    \caption*{Nerfacto 深度图}
+  \end{minipage}
+  \caption{Nerfacto 的渲染和深度结果。}
   \label{fig:nerf-depth}
 \end{figure}
 
-\subsection{3DGS 测试视角渲染}
-
-图 \ref{fig:gs-qual} 展示了 3DGS 在测试视角上的真实图像和渲染结果。相比 Nerfacto，3DGS 的桌面、椅子、黑板边框和墙面纹理更清晰，局部边缘保持更好。这与表 \ref{tab:view-synthesis} 中更高的 PSNR/SSIM 和更低的 LPIPS 一致。
-
-不过，3DGS 的几何仍应谨慎解释。Gaussian 是服务于可微渲染的辐射基元，不是直接重建的网格表面。外观清晰并不意味着几何完全准确，尤其在遮挡、反光和低纹理区域，Gaussian 可能通过局部不透明度和颜色拟合生成较好的视觉结果，却不对应真实物体表面。
+3DGS 的测试视角结果更接近真实图像，桌面、椅子和黑板边框比 Nerfacto 清楚。它的缺点是 Gaussian 不等于真实表面：有些漂浮点或拉丝状结构能降低训练视角的图像损失，但从三维空间看并不一定几何正确。
 
 \begin{figure}[H]
   \centering
   \begin{minipage}{0.45\linewidth}
     \centering
-    \includegraphics[height=0.34\textheight]{gs_gt_00000.png}
+    \includegraphics[height=0.32\textheight]{gs_gt_00000.png}
     \caption*{真实图像}
   \end{minipage}
   \hfill
   \begin{minipage}{0.45\linewidth}
     \centering
-    \includegraphics[height=0.34\textheight]{gs_render_00000.png}
+    \includegraphics[height=0.32\textheight]{gs_render_00000.png}
     \caption*{3DGS 渲染}
   \end{minipage}
-  \caption{3DGS 测试视角定性对比。渲染结果在结构和纹理上接近真实图像。}
+  \caption{3DGS 测试视角渲染对比。}
   \label{fig:gs-qual}
 \end{figure}
-
-图 \ref{fig:gs-scene-viewer} 为将 3DGS full model 的 Gaussian 点云导入网页渲染/查看工具后的整体观察。可以看到，讲台主体、桌面和椅子区域在中心视角附近较为完整，但场景外围存在大量明亮、拉丝状或星点状的杂乱 Gaussian。该现象主要来自三方面：第一，训练视角有限，远离相机轨迹或视角覆盖不足的区域缺少多视图约束，Gaussian 容易在空间中漂浮；第二，桌面反光、黑色显示器、线缆和低纹理墙面会造成外观拟合歧义，优化器可能用拉长或高不透明度的 Gaussian 去解释少数视角中的高光和边缘；第三，3DGS 的目标是降低图像渲染损失，而不是直接约束真实表面，因此只要这些离群 Gaussian 在训练视角投影后有助于拟合颜色，它们就可能被保留下来。由此可见，3DGS 的中心观察视角渲染质量较高，但从全局三维空间查看时仍会暴露出明显的几何噪声和漂浮点。
 
 \begin{figure}[H]
   \centering
@@ -197,30 +191,20 @@ VGGT 是预训练前馈几何模型，能够从一组图像中直接预测相机
     \includegraphics[width=\linewidth]{GS_scene2.png}
     \caption*{靠近讲台观察}
   \end{minipage}
-  \caption{网页查看器中的 3DGS full model。主体区域可辨认，但外围存在大量漂浮和高亮 Gaussian，说明外观拟合好并不等价于全局几何干净。}
+  \caption{3DGS full model 的 Gaussian 可视化。主体区域可辨认，外围存在漂浮和高亮 Gaussian。}
   \label{fig:gs-scene-viewer}
 \end{figure}
 
-\subsection{近邻时间段的三方法并列观察}
-
-为了更直观地比较 Nerfacto、官方 3DGS 和 VGGT-GS 的表观差异，图 \ref{fig:three-render-compare} 选取了三个相隔较远的近邻时间段进行 $3\times3$ 并列展示。每一行对应一个时间段或相邻视角，三列分别为 Nerfacto、官方 3DGS 和 VGGT-GS。由于三种方法的测试/训练视角来源并不完全相同，图中视角只做到时间和构图尽量接近，而不是严格同一相机参数，因此该图用于定性观察，不作为逐像素指标计算依据。
-
-从视觉效果看，Nerfacto 能恢复讲台和主要物体布局，但边界、反光区域和细小线缆较容易模糊；官方 3DGS 的桌面、椅子和显示器边缘更清楚，但局部遮挡区域仍有漂浮或拉伸伪影；VGGT-GS 在训练视角上通常最锐利，桌面边缘、显示器和椅子形状更完整，但由于它是训练视角拟合结果，不能直接说明其新视角泛化能力优于另外两种方法。
+为了直接观察三种渲染方法的外观差异，我把 Nerfacto、官方 3DGS 和 VGGT-GS 的近邻视角放在一起。图 \ref{fig:three-render-compare} 中，Nerfacto 整体结构可见但偏糊；官方 3DGS 纹理和边缘更清楚；VGGT-GS 在训练视角上较锐利，但它不是严格 hold-out 测试，所以只作为补充观察。
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.98\linewidth]{compare_3x3_nerf_3dgs_vggtgs.png}
-  \caption{Nerfacto、3DGS 与 VGGT-GS 在三个近邻时间段上的 $3\times3$ 渲染并列观察。三列为不同方法，三行为相隔较远的近邻视角组。}
+  \caption{Nerfacto、3DGS 与 VGGT-GS 的三方法并列观察。}
   \label{fig:three-render-compare}
 \end{figure}
 
-\subsection{VGGT 与 COLMAP 的点云对比}
-
-图 \ref{fig:vggt-colmap} 对比了 COLMAP 和 VGGT 输出点云的稀疏性。COLMAP 训练集点云仅包含 2113 个点，点主要落在可稳定匹配的纹理和边缘区域，因此整体较稀疏，但相机轨迹连续，且点来自多视图匹配与几何优化，并有平均重投影误差 0.945 px 作为一致性指标。VGGT 输出点云包含 100000 个点，视觉上明显更稠密，能恢复桌面、椅子、地面和讲台外形等更大范围结构，但也能看到部分区域边界发散、表面厚度偏大或漂浮点较多。
-
-从速度看，COLMAP 训练集 SfM 在本地 RTX 4060 Laptop GPU 环境下用时 6.68 s；VGGT 在 AutoDL RTX 4090 48GB 上完成 46 张图像的重建和 sparse 导出用时 28.29 s，峰值显存约 42428 MiB。二者硬件不同，不能作为严格算法速度排名，但可以反映本实验条件下的使用代价：COLMAP 更轻量、点云更稀疏；VGGT 显存消耗高，但能快速给出更稠密的初始化几何。
-
-这种差异会进一步影响后续 3DGS。COLMAP 初始化较稀疏，3DGS 需要在训练过程中通过 densification 逐步生长更多 Gaussian，因此中心视角外观可以优化得很好，但全局查看时仍可能出现漂浮点；VGGT 初始化更稠密，理论上可为 3DGS 提供更多初始空间覆盖，但如果前馈点云中已有尺度误差或漂浮点，也可能把这些不稳定几何带入 Gaussian 优化。因此，VGGT-GS 更适合作为探索性补充，而不是直接替代 COLMAP 初始化的严格结论。
+VGGT 输出的点云有 100000 个点，明显比 COLMAP 的 2113 个稀疏点更密，可以覆盖桌面、椅子和地面等更大范围。但它也会带来表面厚度偏大、边界发散和漂浮点等问题。图 \ref{fig:vggt-colmap} 展示了二者的差异。
 
 \begin{figure}[H]
   \centering
@@ -235,75 +219,78 @@ VGGT 是预训练前馈几何模型，能够从一组图像中直接预测相机
     \includegraphics[width=\linewidth]{pointcloud_vggt.png}
     \caption*{VGGT 点云}
   \end{minipage}
-  \caption{COLMAP 与 VGGT 点云重建结果对比。COLMAP 为 2113 个稀疏点，VGGT 为 100000 个点；VGGT 更稠密，但几何噪声和漂浮点也更需要谨慎分析。}
+  \caption{COLMAP 与 VGGT 点云对比。}
   \label{fig:vggt-colmap}
 \end{figure}
 
-\subsection{VGGT-GS 训练视角结果}
-
-VGGT sparse 模型被整理为 \texttt{data/3dgs\_vggt} 后，可作为 3DGS 初始化输入。训练日志显示 VGGT-GS 的初始点数为 100000，30000 迭代后输出的 Gaussian 点云文件约 163 MB。图 \ref{fig:vggt-gs-train} 展示了其中一个训练视角的 GT 与渲染结果。该结果说明 VGGT 初始化可以支持 3DGS 完成训练视角外观拟合。
-
-但由于当前 VGGT-GS 只用 46 张训练图像重建并训练，\texttt{test/ours\_30000/renders} 目录为空，不能与 Nerfacto 或官方 3DGS 的测试集指标直接横向比较。因此本文只将 VGGT-GS 用作探索性补充：它展示了预训练几何初始化的潜力，但尚未构成严格的新视角合成评估。
+VGGT sparse 结果被整理为 3DGS 输入后，可以完成训练视角拟合。图 \ref{fig:vggt-gs-train} 说明 VGGT 初始化对 3DGS 是可用的；但由于测试目录为空，我没有把 VGGT-GS 放入定量排名。
 
 \begin{figure}[H]
   \centering
   \begin{minipage}{0.45\linewidth}
     \centering
-    \includegraphics[height=0.31\textheight]{vggt_gs_train_gt_00000.png}
+    \includegraphics[height=0.30\textheight]{vggt_gs_train_gt_00000.png}
     \caption*{训练视角真实图像}
   \end{minipage}
   \hfill
   \begin{minipage}{0.45\linewidth}
     \centering
-    \includegraphics[height=0.31\textheight]{vggt_gs_train_render_00000.png}
+    \includegraphics[height=0.30\textheight]{vggt_gs_train_render_00000.png}
     \caption*{VGGT-GS 渲染}
   \end{minipage}
-  \caption{VGGT 初始化 3DGS 的训练视角结果。该图仅用于观察训练视角拟合，不作为 hold-out 指标。}
+  \caption{VGGT 初始化 3DGS 的训练视角结果。}
   \label{fig:vggt-gs-train}
 \end{figure}
 
-\section{讨论}
-
-\subsection{表示能力与适用场景}
-
-COLMAP 学到的是相机位姿、相机内参和可匹配特征对应的稀疏三维点。它保留了几何解释性，但丢掉了大部分外观、材质和低纹理区域的连续表面。对本实验而言，COLMAP 最适合作为传统几何基线和后续神经方法的初始化工具。
-
-Nerfacto 学到的是连续隐式辐射场。它能够将场景压缩进神经网络参数中，并通过体渲染生成新视角图像。它保留了拓扑灵活性和连续表达能力，但网络权重难以直接编辑；在本数据规模下，细节和边界质量有限。
-
-3DGS 学到的是一组显式 Gaussian 辐射基元。它在本实验中最擅长恢复清晰外观和高效渲染，同时比 NeRF 更容易查看和局部调整。但它的几何不是严格表面，Gaussian 的位置和尺度更多服务于图像重建目标。
-
-VGGT 学到的是来自大规模预训练的几何先验。它可以快速给出较稠密的点云和相机估计，对后续 3DGS 初始化有吸引力。但由于它不是本场景上的传统多视图优化结果，其几何精度需要结合可视化和后续渲染表现谨慎判断。
-
-\subsection{综合比较}
+\section{分析}
 
 \begin{table}[H]
   \centering
-  \caption{多种表示的综合比较}
-  \label{tab:discussion}
-  \begin{tabular}{p{2.5cm}p{3.0cm}p{3.0cm}p{3.0cm}p{3.0cm}}
+  \caption{按课程维度的综合分析}
+  \label{tab:analysis}
+  \footnotesize
+  \begin{tabular}{p{3.1cm}p{11.3cm}}
     \toprule
-    维度 & COLMAP & Nerfacto / NeRF & 3DGS & VGGT-GS 补充 \\
+    维度 & 我的观察 \\
     \midrule
-    视觉质量 & 不完整渲染方法 & 整体结构可见，细节较糊 & 本实验中测试指标最好 & 训练视角可拟合，未做严格 test \\
-    几何质量 & 稀疏但可解释 & 深度连续但边界噪声较大 & 外观几何一致性好，但非显式表面 & 点云稠密，但需谨慎解释 \\
-    效率 & SfM 约 6.68 s & 训练约 5.7 小时 & 训练约 15 分钟，渲染约 18 s & VGGT 重建 28.29 s，需 48GB 级显存 \\
-    可编辑性 & 点云和相机直观 & 网络权重难以直接编辑 & Gaussian 基元较易查看调整 & 可作为 3DGS 初始化输入 \\
-    数据要求 & 依赖纹理和重叠视角 & 需要充分覆盖和稳定位姿 & 需要可靠位姿和较密视角 & 依赖预训练模型和显存 \\
+    Differentiability & COLMAP 的 SfM/BA 可优化几何参数，但不直接做图像级可微渲染；Nerfacto 和 3DGS 都通过可微渲染从图像损失训练，其中 3DGS 的 rasterization 更贴近显式基元优化。\\
+    Memory Efficiency & COLMAP 点云最小，只有 2113 个训练集稀疏点；Nerfacto 模型紧凑但训练过程耗时；3DGS 的 Gaussian 点云文件较大；VGGT 前馈重建速度快，但本次峰值显存约 42428 MiB，对 48GB 卡依赖明显。\\
+    Rendering Speed & Nerfacto eval 花了 489.11 s，体渲染较慢；3DGS 渲染 eval 模型约 17.64 s，速度优势最明显。\\
+    Geometric Fidelity & COLMAP 稀疏但有重投影误差 0.945 px 作为几何一致性参考；Nerfacto 深度图可看趋势但边界噪声较多；3DGS 外观最好但 Gaussian 不等价于真实表面；VGGT 点云更密但需要警惕漂浮点。\\
+    Data Acquisition & 手机绕讲台一圈采集成本低，但 51 张图对遮挡、反光桌面和低纹理墙面的覆盖仍有限；更密集、更稳定的环绕路径会改善所有方法。\\
+    Topology Flexibility & NeRF 的隐式场和 3DGS 的点状/椭球基元都比固定网格更灵活；COLMAP 点云不表达连续表面；VGGT 能给出更密的几何先验，但拓扑仍需要后续方法解释。\\
+    ML Integration & Nerfacto 是典型神经场方法；VGGT 体现了预训练大模型几何先验和传统/显式重建流程的结合；3DGS 虽然不是深层 MLP 表示，但训练过程仍是基于梯度优化的机器学习流程。\\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\subsection{局限性}
-
-本实验主要局限包括三点。第一，视频长度约 25 s，抽帧仅 51 张，对讲台内部遮挡、桌面反光和低纹理墙面的覆盖仍有限。第二，不同工具的测试视角导出规则不完全一致，Nerfstudio、官方 3DGS 和 VGGT-GS 的评估口径并非严格同一组相机；因此本文将 VGGT-GS 标记为补充探索，不将其训练视角结果纳入 hold-out 排名。第三，几何质量缺少激光扫描或深度相机真值，只能基于重投影误差、点云稀疏性、深度图、Gaussian 分布和人工观察进行 proxy 评估。
+总体上，我认为本场景里 3DGS 是最实用的新视角合成方法：它比 Nerfacto 快很多，测试指标也更好。COLMAP 仍然很重要，因为它提供了可靠的相机位姿和可解释的稀疏几何。VGGT 的价值在于快速给出更密的初始化，但本次只完成补充探索，还不能作为严格优于 COLMAP 初始化的结论。
 
 \section{结论}
 
-本文完成了同一真实室内讲台场景的多表示重建与评估。COLMAP 成功恢复稀疏点云和相机轨迹，是可靠的几何和位姿基线；Nerfacto 能用隐式神经场表达整体场景，但在本实验数据规模下细节和边界质量有限；官方 3DGS 在外观指标、训练效率和渲染效率上表现最好，是本实验中最推荐的新视角合成表示。
+这次作业中，我完成了一个真实室内讲台场景的多表示重建实验。COLMAP 恢复了可用的相机轨迹和稀疏点云；Nerfacto 能生成新视角但细节偏糊；官方 3DGS 在测试指标、训练时间和渲染速度上都更好；VGGT-GS 展示了预训练几何初始化的潜力，但目前只适合做补充定性观察。
 
-补充的 VGGT-GS 实验表明，VGGT 能在 RTX 4090 48GB 上以 28.29 s 完成 46 张图像的前馈重建并导出 100000 个点，点云密度明显高于 COLMAP 的 2113 个稀疏点。这说明预训练几何模型可以作为传统 SfM 的有益补充，尤其适合作为 3DGS 初始化的探索方向。但当前 VGGT-GS 尚未生成与主实验一致的 hold-out 测试视角，因此其结论应限于点云稠密性、重建速度和训练视角拟合观察。后续若继续完善，可让 VGGT 重建全部 51 张图像，并实现按项目 46/5 split 指定训练与测试相机，从而进行更严格的新视角定量比较。
+我提交的内容包括报告 PDF、项目代码、配置文件、脚本、指标表、时间记录、结果图和日志。由于最终提交前还可能继续整理仓库，commit 字段我先在附录中保留为待填写。
 
 \appendix
+\section{提交信息}
+
+\begin{table}[H]
+  \centering
+  \caption{作业提交信息}
+  \label{tab:submit-info}
+  \begin{tabular}{p{3.2cm}p{10.8cm}}
+    \toprule
+    项目 & 内容 \\
+    \midrule
+    代码仓库 & \url{https://github.com/jsw24000/3d-camputing-hw3.git} \\
+    Commit & 待最终提交后填写 \\
+    提交内容 & \texttt{report.pdf}、\texttt{README.md}、\texttt{config/}、\texttt{scripts/}、\texttt{results/metrics.csv}、\texttt{results/timing.csv}、可视化图片和日志。\\
+    失败样例 & 暂无 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
 \section{关键复现实验命令}
 
 \begin{verbatim}
@@ -331,7 +318,6 @@ conda run --no-capture-output -n scene-3dgs python \
 
 python scripts/monitor_run.py --method vggt --stage reconstruction \
   --interval 1 -- python scripts/run_vggt_gs.py --mode vggt
-
 python scripts/run_3dgs.py --mode train --source-mode vggt --profile full
 python scripts/run_3dgs.py --mode render --source-mode vggt --profile full
 \end{verbatim}
@@ -341,12 +327,10 @@ python scripts/run_3dgs.py --mode render --source-mode vggt --profile full
 \begin{itemize}
   \item 定量指标：\texttt{results/metrics.csv}
   \item 运行时间：\texttt{results/timing.csv}
-  \item VGGT 监控日志：\texttt{results/vggt\_gs/monitor\_vggt\_reconstruction.json}
   \item COLMAP 几何摘要：\texttt{results/colmap/train\_geometry\_summary.json}
-  \item COLMAP 几何图：\texttt{results/colmap/train\_geometry\_preview.png}
-  \item VGGT sparse：\texttt{results/vggt\_gs/sparse/}
-  \item VGGT-GS 训练视角渲染：\texttt{results/vggt\_gs/model/train/ours\_30000/}
+  \item VGGT 监控日志：\texttt{results/vggt\_gs/monitor\_vggt\_reconstruction.json}
   \item 3DGS 测试渲染：\texttt{results/3dgs/eval\_model/test/ours\_30000/}
+  \item VGGT-GS 训练视角渲染：\texttt{results/vggt\_gs/model/train/ours\_30000/}
 \end{itemize}
 
 \end{document}
