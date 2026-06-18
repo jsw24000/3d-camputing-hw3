@@ -216,9 +216,11 @@ VGGT-GS 的价值在于 ML integration：它把预训练几何先验接到了传
 
 \section{结论}
 
+对于我拍摄的这个室内讲台场景，我更推荐使用 3DGS 作为主要表示。它依赖 COLMAP 位姿和显式 Gaussian 表示，训练时间、渲染速度和测试指标之间的平衡最好，也最适合本次这种图像数量不多、目标是快速得到可视化结果的作业场景。
+
 这次作业中，我完成了一个真实室内讲台场景的多表示重建实验。COLMAP 恢复了可用的相机轨迹和稀疏点云；Nerfacto 能生成新视角但细节偏糊；普通 3DGS 在对齐测试视角上的指标和视觉效果最好；VGGT-GS 展示了预训练几何初始化的潜力，但仍会在遮挡和俯视角中产生明显形变。
 
-我提交的内容包括报告 PDF、项目代码、配置文件、脚本、指标表、时间记录、结果图和日志。由于最终提交前还可能继续整理仓库，commit 字段我先在附录中保留为待填写。
+我提交的内容包括报告 PDF、项目代码、配置文件、脚本、指标表、时间记录、结果图和日志，具体仓库版本见附录。
 
 \appendix
 \section{提交信息}
@@ -232,12 +234,30 @@ VGGT-GS 的价值在于 ML integration：它把预训练几何先验接到了传
     项目 & 内容 \\
     \midrule
     代码仓库 & \url{https://github.com/jsw24000/3d-camputing-hw3.git} \\
-    Commit & 当前本地 HEAD：\texttt{c1cf8db}；最终提交后更新为最后一次提交的 hash。\\
+    Commit & \texttt{dd2a5c9} \\
     提交内容 & \texttt{report.pdf}、\texttt{README.md}、\texttt{config/}、\texttt{scripts/}、\texttt{results/metrics.csv}、\texttt{results/timing.csv}、可视化图片和日志。\\
-    失败样例 & Nerfacto 在 \texttt{frame\_000024} 和 \texttt{frame\_000026} 的俯视测试视角中失败明显：电脑屏幕和支架发生漂移，桌面高光和纹理被抹平。主要原因可能是遮挡、反光桌面、薄结构和测试视角变化较大，少量手机图像对这些区域的几何约束不足；局部证据见图 \ref{fig:detail-crop}。\\
+    失败样例 & Nerfacto 在 \texttt{frame\_000024} 和 \texttt{frame\_000026} 的俯视测试视角中失败明显：电脑屏幕和支架发生漂移，桌面高光和纹理被抹平。主要原因可能是遮挡、反光桌面、薄结构和测试视角变化较大，少量手机图像对这些区域的几何约束不足；局部证据见图 \ref{fig:detail-crop}、图 \ref{fig:failure-nerf-024} 和图 \ref{fig:failure-nerf-026}。\\
     \bottomrule
   \end{tabular}
 \end{table}
+
+\section{失败案例图}
+
+图 \ref{fig:failure-nerf-024} 和图 \ref{fig:failure-nerf-026} 展示了 Nerfacto 在两个俯视测试视角上的主要失败。GT 中电脑屏幕、支架和鼠标垫是清晰的薄结构，但 Nerfacto 渲染中这些区域漂移到桌面上，并和桌面高光混在一起。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{failure_nerfacto_000024.png}
+  \caption{Nerfacto 在 frame 000024 的失败。}
+  \label{fig:failure-nerf-024}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{failure_nerfacto_000026.png}
+  \caption{Nerfacto 在 frame 000026 的失败。}
+  \label{fig:failure-nerf-026}
+\end{figure}
 
 \section{关键复现实验命令}
 

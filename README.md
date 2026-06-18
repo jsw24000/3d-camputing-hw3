@@ -1,236 +1,105 @@
-# 3D Scene Reconstruction Assignment Pipeline
+# 3D Scene Reconstruction Homework 3
 
-This project prepares the non-report part of the assignment: data preprocessing,
-scene representation training adapters, evaluation, timing, and result
-collection. The report PDF is intentionally not generated here.
+本仓库是三维计算成像基础作业三的实验代码与结果整理。场景为华为手机绕教室讲台一圈拍摄的室内讲台区域，实验比较 COLMAP、Nerfacto/NeRF、官方 3DGS 和 VGGT-GS。
 
-The project reuses the existing Conda environment `torch_env`; it does not
-create a project-local `.venv`.
+## 环境说明
 
-## 1. Environment
+主要在 Windows 11 + RTX 4060 Laptop 8GB 上运行；VGGT 重建部分在 AutoDL 的 RTX 4090 48GB 上运行。
 
-Use the main environment:
+本地主要环境：
 
 ```powershell
 conda activate torch_env
 ```
 
-Or run commands directly:
+另外使用过：
 
-```powershell
-conda run -n torch_env python scripts/check_env.py --dry-run
-```
+- `scene-nerf`：运行 Nerfstudio / Nerfacto。
+- `scene-3dgs`：运行 GraphDeCo 官方 3D Gaussian Splatting。
+- COLMAP：用于相机位姿和稀疏点云恢复。
 
-Current configured tools are in `config/project.yaml`:
+具体路径和参数见 `config/project.yaml`。
 
-- Python: `G:/anaconda/envs/torch_env/python.exe`
-- COLMAP: `E:/3D-tools/COLMAP/bin/colmap.exe`
-- ffmpeg: not configured yet; set `env.ffmpeg` or add it to PATH
+## 数据路径
 
-Environment report:
+- 原始视频：`data/raw/desk.mp4`
+- 抽帧图像：`data/images/`
+- 训练图像：`data/images_train/`
+- 测试图像：`data/images_test/`
+- 训练/测试划分：`data/splits/train.txt`、`data/splits/test.txt`
+- Nerfstudio 输入：`data/nerfstudio_colmap_train/`
+- 3DGS 输入：`data/3dgs_full_undistorted/`
+- VGGT-GS 输入：`data/3dgs_vggt_51/`
 
-```powershell
-conda run -n torch_env python scripts/check_env.py --dry-run
-```
+本次使用 51 张图像，其中 46 张训练、5 张测试。
 
-Output:
+## 主要复现实验命令
 
-```text
-logs/env_report.json
-```
-
-## 2. Directory Layout
-
-```text
-data/
-  raw/desk.mp4
-  images/
-  splits/train.txt
-  splits/test.txt
-  colmap/
-results/
-  colmap/
-  nerfstudio/
-  3dgs/
-  vggt_gs/
-  metrics.csv
-  timing.csv
-logs/
-external/
-```
-
-Place third-party repositories under `external/` when needed:
-
-```text
-external/gaussian-splatting/
-external/vggt-omega/
-```
-
-## 3. Dry-Run Before Video Exists
-
-These commands should be safe before recording the video:
-
-```powershell
-conda run -n torch_env python scripts/inspect_video_camera.py --dry-run
-conda run -n torch_env python scripts/prepare_video.py --dry-run
-conda run -n torch_env python scripts/split_dataset.py --dry-run
-conda run -n torch_env python scripts/run_colmap.py --dry-run
-conda run -n torch_env python scripts/run_nerfstudio.py --dry-run
-conda run -n torch_env python scripts/run_3dgs.py --dry-run
-conda run -n torch_env python scripts/run_vggt_gs.py --dry-run
-conda run -n torch_env python scripts/collect_results.py --dry-run
-conda run -n torch_env python scripts/evaluate_all.py --dry-run
-```
-
-They preview commands and paths. Missing external dependencies are reported
-instead of hidden.
-
-Current orchestration helper:
-
-```powershell
-conda run -n torch_env python scripts/pipeline.py status
-conda run -n torch_env python scripts/pipeline.py prepare-all --dry-run
-conda run -n torch_env python scripts/run_experiment_suite.py --method all --stage all --dry-run
-```
-
-## 4. Full Workflow After Recording
-
-The compact route is:
-
-```powershell
-python scripts/pipeline.py prepare-all
-```
-
-This runs frame extraction, split generation, all-view COLMAP, train/test
-physical split, train-only COLMAP, COLMAP geometry analysis, 3DGS data
-preparation, and method dry-runs.
-
-The explicit route is:
-
-1. Put the raw video at `data/raw/desk.mp4`, or update `data.video` in
-   `config/project.yaml`.
-2. Extract frames:
+数据准备与 COLMAP：
 
 ```powershell
 python scripts/inspect_video_camera.py
 python scripts/prepare_video.py
-```
-
-3. Create shared train/test split:
-
-```powershell
 python scripts/split_dataset.py
-```
-
-4. Run COLMAP sparse reconstruction:
-
-```powershell
 python scripts/run_colmap.py
-```
-
-5. Convert COLMAP poses to Nerfstudio transforms and prepare 3DGS source data:
-
-```powershell
-python scripts/colmap_to_nerfstudio.py
-python scripts/prepare_3dgs_data.py
-```
-
-Geometry quality artifacts from train-only COLMAP:
-
-```powershell
 python scripts/analyze_colmap_geometry.py
 ```
 
-Output:
-
-```text
-results/colmap/train_geometry_summary.json
-results/colmap/train_camera_centers.csv
-results/colmap/train_geometry_preview.png
-```
-
-Camera/video audit:
-
-```text
-logs/video_camera_report.json
-results/camera_parameters.md
-```
-
-6. Run Nerfacto/NeRF via nerfstudio:
+Nerfacto / NeRF：
 
 ```powershell
-python scripts/run_nerfstudio.py
+conda run -n scene-nerf python scripts/run_experiment_suite.py --method nerfstudio --stage train --env-mode fallback
+python scripts/make_nerfstudio_compat_testset.py
 ```
 
-After training, run native Nerfstudio evaluation and optional render export:
+官方 3DGS：
 
 ```powershell
-python scripts/run_nerfstudio.py --mode eval
+python scripts/run_3dgs.py --mode all --source-mode full --profile full --eval --llffhold 0
 ```
 
-7. Run official 3DGS adapter:
+VGGT-GS：
 
 ```powershell
-python scripts/run_3dgs.py
+python scripts/monitor_run.py --method vggt --stage reconstruction --interval 1 -- python scripts/run_vggt_gs.py --mode vggt
+python scripts/run_3dgs.py --mode all --source-mode vggt --profile full --eval --llffhold 0
 ```
 
-8. Run VGGT-to-COLMAP and GS adapter:
+指标汇总：
 
 ```powershell
-python scripts/run_vggt_gs.py
-```
-
-9. Evaluate rendered hold-out images:
-
-```powershell
-python scripts/evaluate_render.py --method 3dgs --pred-dir results/3dgs/eval_model/test/ours_30000/renders --gt-dir results/3dgs/eval_model/test/ours_30000/gt
-python scripts/evaluate_all.py --dry-run
-python scripts/evaluate_all.py
-```
-
-10. Summarize outputs:
-
-```powershell
+python scripts/evaluate_all.py --method all
 python scripts/collect_results.py
 ```
 
-## 5. Timing Wrapper
+## 输出位置
 
-Wrap long commands with:
+- COLMAP 几何结果：`results/colmap/`
+- Nerfacto 渲染与评估：`results/nerfstudio/`
+- 3DGS 模型与渲染：`results/3dgs/full_model/`
+- VGGT-GS 重建、模型与渲染：`results/vggt_gs/`
+- 定量指标：`results/metrics.csv`
+- 时间记录：`results/timing.csv`
+- 日志：`logs/`
+- 报告图片：`report/assets/`
+- 最终报告：`report/report.pdf`
 
-```powershell
-python scripts/timed_run.py --method 3dgs --stage train -- python scripts/run_3dgs.py --mode train
+## 提交包结构建议
+
+按照作业建议的结构，当前仓库内容可整理为：
+
+```text
+student_id_name_assignment/
+  report.pdf              # 对应 report/report.pdf
+  README.md               # 本文件
+  configs/                # 对应 config/project.yaml
+  scripts/                # 实验脚本
+  results/
+    metrics.csv           # 对应 results/metrics.csv
+    timing.csv            # 对应 results/timing.csv
+    qualitative/          # 渲染对比图、失败案例图、报告可视化图片
+    geometry/             # COLMAP/VGGT 点云、相机轨迹、几何摘要
+  logs/                   # 关键运行日志
 ```
 
-This appends timing/resource metadata to `results/timing.csv` and writes a JSON
-log under `logs/`.
-
-Unified experiment runner:
-
-```powershell
-python scripts/run_experiment_suite.py --method nerfstudio --stage train --env-mode fallback
-python scripts/run_experiment_suite.py --method 3dgs --stage render --env-mode fallback
-python scripts/run_experiment_suite.py --stage collect
-```
-
-## 6. Method Policy
-
-- Representation 1: COLMAP sparse point cloud / geometry.
-- Representation 2: nerfstudio Nerfacto/NeRF.
-- Representation 3: official 3D Gaussian Splatting.
-- Extra comparison: VGGT predicts camera/point/COLMAP-format data, then feeds a
-  Gaussian splatting training path.
-
-All methods must use the same extracted images and the same hold-out split.
-Do not treat COLMAP or VGGT output as absolute ground truth.
-
-External installation notes are in `INSTALL_EXTERNAL.md`.
-The compact command checklist is in `EXPERIMENT_COMMANDS.md`.
-The method manifest used by the report is `results/method_manifest.json`, with
-the generated readable version in `METHOD_ARCHITECTURES.md`.
-
-Readiness check:
-
-```powershell
-conda run -n torch_env python scripts/check_readiness.py
-```
+建议放入 `qualitative/` 的文件包括报告中的对齐渲染图、Nerfacto 失败案例图和 3DGS viewer 截图；建议放入 `geometry/` 的文件包括 COLMAP 轨迹图、COLMAP/VGGT 点云图和几何摘要文件。
