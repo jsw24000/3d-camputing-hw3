@@ -118,11 +118,11 @@ evaluation:
   metrics_csv: results/metrics.csv
   methods:
     nerfstudio:
-      pred_dir: results/nerfstudio/eval_renders
-      gt_dir: data/images_test
-    3dgs_eval_test:
-      pred_dir: results/3dgs/eval_model/test/ours_30000/renders
-      gt_dir: results/3dgs/eval_model/test/ours_30000/gt
+      pred_dir: results/nerfstudio/test5_dataset_renders/test/rgb
+      gt_dir: results/nerfstudio/test5_dataset_renders/test/gt-rgb
+    3dgs_aligned_test:
+      pred_dir: results/3dgs/full_model/test/ours_30000/renders
+      gt_dir: results/3dgs/full_model/test/ours_30000/gt
     3dgs_eval_train:
       pred_dir: results/3dgs/eval_model/train/ours_30000/renders
       gt_dir: results/3dgs/eval_model/train/ours_30000/gt
@@ -130,5 +130,5 @@ evaluation:
       pred_dir: results/3dgs/full_model/train/ours_30000/renders
       gt_dir: results/3dgs/full_model/train/ours_30000/gt
     vggt_gs:
-      pred_dir: results/vggt_gs/renders
-      gt_dir: data/images_test
+      pred_dir: results/vggt_gs/model_51/test/ours_30000/renders
+      gt_dir: results/vggt_gs/model_51/test/ours_30000/gt
