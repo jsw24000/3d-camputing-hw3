@@ -230,9 +230,9 @@ VGGT-GS 的价值在于 ML integration：它把预训练几何先验接到了传
     项目 & 内容 \\
     \midrule
     代码仓库 & \url{https://github.com/jsw24000/3d-camputing-hw3.git} \\
-    Commit & 待最终提交后填写 \\
+    Commit & 当前本地 HEAD：\texttt{c1cf8db}；最终提交后更新为最后一次提交的 hash。\\
     提交内容 & \texttt{report.pdf}、\texttt{README.md}、\texttt{config/}、\texttt{scripts/}、\texttt{results/metrics.csv}、\texttt{results/timing.csv}、可视化图片和日志。\\
-    失败样例 & 暂无 \\
+    失败样例 & Nerfacto 在 \texttt{frame\_000024} 和 \texttt{frame\_000026} 的俯视测试视角中失败明显：电脑屏幕和支架发生漂移，桌面高光和纹理被抹平。主要原因可能是遮挡、反光桌面、薄结构和测试视角变化较大，少量手机图像对这些区域的几何约束不足；局部证据见图 \ref{fig:detail-crop}。\\
     \bottomrule
   \end{tabular}
 \end{table}

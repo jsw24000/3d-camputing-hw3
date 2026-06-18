@@ -36,6 +36,9 @@ logs/*.json
 external/*
 !external/.gitkeep
 
+# Report source, generated PDF, and visual assets.
+report/
+
 # Model checkpoints / weights should be downloaded on the run machine.
 *.ckpt
 *.pth
